@@ -3,7 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Web to Markdown Converter</title>
+
+    <title>Web to Markdown — Paste HTML, get clean MD</title>
+    <meta name="description" content="Paste any rich web content and get clean GitHub-Flavored Markdown instantly. Supports tables, headings, lists, code blocks and links. Runs entirely in your browser." />
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <!-- Open Graph / social sharing -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://tomd.vercel.app/" />
+    <meta property="og:title" content="Web to Markdown Converter" />
+    <meta property="og:description" content="Paste any rich web content and get clean GitHub-Flavored Markdown instantly. Runs entirely in your browser — no uploads, no tracking." />
+
+    <!-- Twitter card -->
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Web to Markdown Converter" />
+    <meta name="twitter:description" content="Paste rich text — get clean Markdown. Tables, headings, code blocks and GFM all supported." />
 
     <style>
       * {
@@ -401,6 +417,28 @@
         flex-shrink: 0;
       }
 
+      /* ── GitHub link ──────────────────────────────────── */
+      .github-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.78rem;
+        font-weight: 500;
+        color: #8892a4;
+        text-decoration: none;
+        padding: 0.3rem 0.65rem;
+        border: 1px solid #2e3650;
+        border-radius: 6px;
+        transition: all 0.15s;
+        white-space: nowrap;
+      }
+      .github-link:hover {
+        color: #e2e8f0;
+        border-color: #6366f1;
+        background: rgba(99, 102, 241, 0.1);
+      }
+      .github-link svg { flex-shrink: 0; }
+
       /* ── Responsive ───────────────────────────────────── */
       @media (max-width: 768px) {
         body { overflow: auto; }
@@ -416,7 +454,19 @@
         <h1>Web to Markdown</h1>
         <p>Paste rich content on the left — get clean Markdown on the right</p>
       </div>
-      <span class="header-badge">GFM + Tables + Code</span>
+      <div style="display:flex;align-items:center;gap:0.6rem;flex-shrink:0">
+        <span class="header-badge">GFM + Tables + Code</span>
+        <a href="https://github.com/emadjumaah/tomd"
+           target="_blank"
+           rel="noopener noreferrer"
+           class="github-link"
+           title="Star on GitHub">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+          </svg>
+          Star on GitHub
+        </a>
+      </div>
     </header>
 
     <main class="main-container">

@@ -24,6 +24,11 @@ export class WebToMarkdownApp {
   private isUpdatingFromEditor = false;
   private updateTimeout: number | null = null;
 
+  // Undo/redo history for the WYSIWYG editor
+  private history: string[] = [""];
+  private historyIndex = 0;
+  private readonly MAX_HISTORY = 50;
+
   constructor() {
     this.initializeEditor();
     this.initializeConverter();
@@ -41,8 +46,49 @@ export class WebToMarkdownApp {
     this.editor.innerHTML = "";
 
     this.editor.addEventListener("input", () => {
-      this.debounceUpdate(() => this.updateMarkdown());
+      this.debounceUpdate(() => {
+        this.updateMarkdown();
+        this.saveSnapshot();
+      });
     });
+
+    this.editor.addEventListener("keydown", (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        this.undo();
+      } else if (mod && (e.key === "y" || (e.key === "z" && e.shiftKey))) {
+        e.preventDefault();
+        this.redo();
+      }
+    });
+  }
+
+  private saveSnapshot(): void {
+    const current = this.editor.innerHTML;
+    if (this.history[this.historyIndex] === current) return;
+    // Discard any redo states ahead of current position
+    this.history = this.history.slice(0, this.historyIndex + 1);
+    this.history.push(current);
+    if (this.history.length > this.MAX_HISTORY) {
+      this.history.shift();
+    } else {
+      this.historyIndex++;
+    }
+  }
+
+  private undo(): void {
+    if (this.historyIndex <= 0) return;
+    this.historyIndex--;
+    this.editor.innerHTML = this.history[this.historyIndex];
+    this.updateMarkdown();
+  }
+
+  private redo(): void {
+    if (this.historyIndex >= this.history.length - 1) return;
+    this.historyIndex++;
+    this.editor.innerHTML = this.history[this.historyIndex];
+    this.updateMarkdown();
   }
 
   private initializeConverter(): void {
@@ -151,7 +197,7 @@ export class WebToMarkdownApp {
         }
 
         // Trigger conversion after DOM settles
-        setTimeout(() => this.updateMarkdown(), 50);
+        setTimeout(() => { this.updateMarkdown(); this.saveSnapshot(); }, 50);
         return;
       }
 
@@ -165,7 +211,7 @@ export class WebToMarkdownApp {
         } else {
           this.editor.innerText = textData;
         }
-        setTimeout(() => this.updateMarkdown(), 50);
+        setTimeout(() => { this.updateMarkdown(); this.saveSnapshot(); }, 50);
       }
     });
   }
@@ -305,6 +351,7 @@ export class WebToMarkdownApp {
         '<p style="color:#6c757d;text-align:center;margin-top:2rem">Preview will appear here once you add content...</p>';
     }
     this.updateStats();
+    this.saveSnapshot();
   }
 
   private downloadMarkdown(): void {

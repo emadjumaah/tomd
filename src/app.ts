@@ -2,22 +2,26 @@ import { AdvancedHtmlToMarkdown } from "./converter";
 import { marked } from "marked";
 import * as monaco from "monaco-editor";
 
-// Configure Monaco to work without web workers
+// Configure Monaco workers — use a minimal blob worker so Monaco initialises
+// without errors even when no real language-server workers are bundled.
 (window as any).MonacoEnvironment = {
-  getWorkerUrl: function (_moduleId: string, _label: string) {
-    return "";
-  },
-  getWorker: function (_moduleId: string, _label: string) {
-    return new Worker("");
+  getWorker(_moduleId: string, _label: string): Worker {
+    const blob = new Blob(["self.onmessage = function() {};"], {
+      type: "application/javascript",
+    });
+    return new Worker(URL.createObjectURL(blob));
   },
 };
+
+// Use the modern marked.use() API (marked.setOptions is deprecated in v5+).
+// gfm is true by default; we only need to opt-in to soft-break support.
+marked.use({ breaks: true });
 
 export class WebToMarkdownApp {
   private editor!: HTMLElement;
   private converter!: AdvancedHtmlToMarkdown;
   private mdEditor!: monaco.editor.IStandaloneCodeEditor;
   private isUpdatingFromEditor = false;
-  private isUpdatingFromMonaco = false;
   private updateTimeout: number | null = null;
 
   constructor() {
@@ -36,20 +40,8 @@ export class WebToMarkdownApp {
     this.editor.contentEditable = "true";
     this.editor.innerHTML = "";
 
-    // Add input event listener for conversion
     this.editor.addEventListener("input", () => {
-      if (!this.isUpdatingFromMonaco) {
-        this.debounceUpdate(() => this.updateMarkdown());
-      }
-    });
-
-    // Also listen for paste events
-    this.editor.addEventListener("paste", () => {
-      setTimeout(() => {
-        if (!this.isUpdatingFromMonaco) {
-          this.debounceUpdate(() => this.updateMarkdown());
-        }
-      }, 100);
+      this.debounceUpdate(() => this.updateMarkdown());
     });
   }
 
@@ -78,12 +70,6 @@ export class WebToMarkdownApp {
       readOnly: false,
       padding: { top: 10 },
     });
-
-    // Configure marked for preview
-    marked.setOptions({
-      gfm: true,
-      breaks: true,
-    });
   }
 
   private setupEventListeners(): void {
@@ -97,31 +83,28 @@ export class WebToMarkdownApp {
       });
     });
 
-    // Monaco editor changes
+    // Monaco editor changes → update preview and stats
     this.mdEditor.onDidChangeModelContent(() => {
       if (!this.isUpdatingFromEditor) {
         this.debounceUpdate(async () => await this.updatePreview());
       }
+      this.updateStats();
     });
 
-    // Copy button
     document.getElementById("copy-md")?.addEventListener("click", () => {
       this.copyMarkdown();
     });
 
-    // Clear button
     document.getElementById("clear-all")?.addEventListener("click", () => {
       this.clearAll();
     });
 
-    // Download button
     document.getElementById("download-md")?.addEventListener("click", () => {
       this.downloadMarkdown();
     });
   }
 
   private switchTab(tabName: string): void {
-    // Remove active class from all tabs and contents
     document
       .querySelectorAll(".tab")
       .forEach((tab) => tab.classList.remove("active"));
@@ -129,11 +112,9 @@ export class WebToMarkdownApp {
       .querySelectorAll(".tab-content")
       .forEach((content) => content.classList.remove("active"));
 
-    // Add active class to selected tab and content
     document.querySelector(`[data-tab="${tabName}"]`)?.classList.add("active");
     document.getElementById(`${tabName}-tab`)?.classList.add("active");
 
-    // Refresh Monaco editor when switching to editor tab
     if (tabName === "editor") {
       setTimeout(() => {
         this.mdEditor.layout();
@@ -142,20 +123,17 @@ export class WebToMarkdownApp {
   }
 
   private setupPasteHandling(): void {
-    // Enhanced paste handling for web content
     this.editor.addEventListener("paste", async (event: ClipboardEvent) => {
       event.preventDefault();
 
       const clipboardData = event.clipboardData;
       if (!clipboardData) return;
 
-      // Try to get HTML content first (preserves formatting)
+      // Prefer HTML (preserves formatting); fall back to plain text
       const htmlData = clipboardData.getData("text/html");
       if (htmlData) {
-        // Process the HTML to clean it up
         const processedHtml = this.processPastedHtml(htmlData);
 
-        // Insert the processed HTML at cursor position
         const selection = window.getSelection();
         if (selection && selection.rangeCount > 0) {
           const range = selection.getRangeAt(0);
@@ -171,10 +149,12 @@ export class WebToMarkdownApp {
         } else {
           this.editor.innerHTML = processedHtml;
         }
+
+        // Trigger conversion after DOM settles
+        setTimeout(() => this.updateMarkdown(), 50);
         return;
       }
 
-      // Fallback to plain text
       const textData = clipboardData.getData("text/plain");
       if (textData) {
         const selection = window.getSelection();
@@ -185,12 +165,12 @@ export class WebToMarkdownApp {
         } else {
           this.editor.innerText = textData;
         }
+        setTimeout(() => this.updateMarkdown(), 50);
       }
     });
   }
 
   private processPastedHtml(html: string): string {
-    // Create a temporary DOM element to process the HTML
     const tempDiv = document.createElement("div");
     tempDiv.innerHTML = html;
 
@@ -199,25 +179,27 @@ export class WebToMarkdownApp {
       .querySelectorAll("script, style, meta, link, noscript")
       .forEach((el) => el.remove());
 
-    // Clean up attributes but keep essential ones
+    // Strip all attributes except a safe whitelist
     tempDiv.querySelectorAll("*").forEach((el) => {
       const keepAttrs = ["href", "src", "alt", "title", "colspan", "rowspan"];
-      const attrs = Array.from(el.attributes);
-      attrs.forEach((attr) => {
+      Array.from(el.attributes).forEach((attr) => {
         if (!keepAttrs.includes(attr.name)) {
           el.removeAttribute(attr.name);
         }
       });
+      // Reject javascript: and data: hrefs/srcs
+      const href = el.getAttribute("href");
+      if (href && /^(javascript|data):/i.test(href)) {
+        el.removeAttribute("href");
+      }
+      const src = el.getAttribute("src");
+      if (src && /^(javascript|data):/i.test(src)) {
+        el.removeAttribute("src");
+      }
     });
 
-    // Convert Word-specific formatting to standard HTML
-    tempDiv.querySelectorAll("[class^='Mso']").forEach((el) => {
-      el.removeAttribute("class");
-    });
-
-    // Handle tables specifically
+    // Fix tables that use <th> without <thead>
     tempDiv.querySelectorAll("table").forEach((table) => {
-      // Ensure table has proper structure
       if (
         !table.querySelector("thead") &&
         table.querySelector("tr:first-child th")
@@ -238,23 +220,18 @@ export class WebToMarkdownApp {
     if (this.updateTimeout) {
       clearTimeout(this.updateTimeout);
     }
-    this.updateTimeout = setTimeout(callback, 300);
+    this.updateTimeout = window.setTimeout(callback, 300);
   }
 
   private updateMarkdown(): void {
     try {
       this.isUpdatingFromEditor = true;
 
-      // Get HTML from editor
       const html = this.editor.innerHTML;
-
-      // Convert to markdown using our advanced converter
       const markdown = this.converter.convert(html);
 
-      // Update Monaco editor
       this.mdEditor.setValue(markdown);
-
-      // Update preview
+      this.updateStats();
       this.updatePreview();
     } catch (error) {
       console.error("Error updating markdown:", error);
@@ -272,12 +249,30 @@ export class WebToMarkdownApp {
       const previewElement = document.getElementById("markdown-preview");
 
       if (previewElement) {
-        const html = await marked.parse(markdown);
+        let html = await marked.parse(markdown);
+
+        // XSS hardening: strip javascript:/data: hrefs and inline event handlers
+        html = html
+          .replace(/\shref="(javascript|data):[^"]*"/gi, "")
+          .replace(/\ssrc="(javascript|data):[^"]*"/gi, "")
+          .replace(/\s+on\w+="[^"]*"/gi, "");
+
         previewElement.innerHTML = html;
       }
     } catch (error) {
       console.error("Error updating preview:", error);
     }
+  }
+
+  private updateStats(): void {
+    const markdown = this.mdEditor.getValue();
+    const statsEl = document.getElementById("md-stats");
+    if (!statsEl) return;
+
+    const chars = markdown.length;
+    const words = markdown.trim() === "" ? 0 : markdown.trim().split(/\s+/).length;
+    const lines = markdown === "" ? 0 : markdown.split("\n").length;
+    statsEl.textContent = `${words} words · ${chars} chars · ${lines} lines`;
   }
 
   private async copyMarkdown(): Promise<void> {
@@ -287,10 +282,9 @@ export class WebToMarkdownApp {
     try {
       await navigator.clipboard.writeText(markdown);
 
-      // Show feedback
       const button = document.getElementById("copy-md") as HTMLButtonElement;
       const originalText = button.textContent;
-      button.textContent = "Copied!";
+      button.textContent = "✓ Copied!";
       button.classList.add("success");
 
       setTimeout(() => {
@@ -303,9 +297,14 @@ export class WebToMarkdownApp {
   }
 
   private clearAll(): void {
-    this.editor.innerHTML = "<p></p>";
+    this.editor.innerHTML = "";
     this.mdEditor.setValue("");
-    document.getElementById("markdown-preview")!.innerHTML = "";
+    const preview = document.getElementById("markdown-preview");
+    if (preview) {
+      preview.innerHTML =
+        '<p style="color:#6c757d;text-align:center;margin-top:2rem">Preview will appear here once you add content...</p>';
+    }
+    this.updateStats();
   }
 
   private downloadMarkdown(): void {
@@ -324,13 +323,12 @@ export class WebToMarkdownApp {
     URL.revokeObjectURL(url);
   }
 
-  // Public method to get current markdown
   public getMarkdown(): string {
     return this.mdEditor.getValue();
   }
 
-  // Public method to set content
   public setContent(html: string): void {
     this.editor.innerHTML = html;
+    this.updateMarkdown();
   }
 }

@@ -9,8 +9,6 @@
     "preview": "vite preview"
   },
   "devDependencies": {
-    "@types/marked": "^5.0.2",
-    "@types/quill": "^2.0.14",
     "@types/turndown": "^5.0.6",
     "typescript": "~5.9.3",
     "vite": "^7.3.1"
@@ -18,7 +16,6 @@
   "dependencies": {
     "marked": "^17.0.3",
     "monaco-editor": "^0.55.1",
-    "quill": "^2.0.3",
     "turndown": "^7.2.2",
     "turndown-plugin-gfm": "^1.0.2"
   }

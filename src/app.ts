@@ -86,7 +86,7 @@ export class WebToMarkdownApp {
     // Monaco editor changes → update preview and stats
     this.mdEditor.onDidChangeModelContent(() => {
       if (!this.isUpdatingFromEditor) {
-        this.debounceUpdate(async () => await this.updatePreview());
+        this.debounceUpdate(() => this.updatePreview());
       }
       this.updateStats();
     });
@@ -243,13 +243,13 @@ export class WebToMarkdownApp {
     }
   }
 
-  private async updatePreview(): Promise<void> {
+  private updatePreview(): void {
     try {
       const markdown = this.mdEditor.getValue();
       const previewElement = document.getElementById("markdown-preview");
 
       if (previewElement) {
-        let html = await marked.parse(markdown);
+        let html = marked.parse(markdown) as string;
 
         // XSS hardening: strip javascript:/data: hrefs and inline event handlers
         html = html

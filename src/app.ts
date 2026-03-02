@@ -75,6 +75,7 @@ export class WebToMarkdownApp {
     } else {
       this.historyIndex++;
     }
+    this.updateUndoRedoButtons();
   }
 
   private undo(): void {
@@ -82,6 +83,7 @@ export class WebToMarkdownApp {
     this.historyIndex--;
     this.editor.innerHTML = this.history[this.historyIndex];
     this.updateMarkdown();
+    this.updateUndoRedoButtons();
   }
 
   private redo(): void {
@@ -89,6 +91,14 @@ export class WebToMarkdownApp {
     this.historyIndex++;
     this.editor.innerHTML = this.history[this.historyIndex];
     this.updateMarkdown();
+    this.updateUndoRedoButtons();
+  }
+
+  private updateUndoRedoButtons(): void {
+    const undoBtn = document.getElementById("undo-btn") as HTMLButtonElement | null;
+    const redoBtn = document.getElementById("redo-btn") as HTMLButtonElement | null;
+    if (undoBtn) undoBtn.disabled = this.historyIndex <= 0;
+    if (redoBtn) redoBtn.disabled = this.historyIndex >= this.history.length - 1;
   }
 
   private initializeConverter(): void {
@@ -135,6 +145,14 @@ export class WebToMarkdownApp {
         this.debounceUpdate(() => this.updatePreview());
       }
       this.updateStats();
+    });
+
+    document.getElementById("undo-btn")?.addEventListener("click", () => {
+      this.undo();
+    });
+
+    document.getElementById("redo-btn")?.addEventListener("click", () => {
+      this.redo();
     });
 
     document.getElementById("copy-md")?.addEventListener("click", () => {

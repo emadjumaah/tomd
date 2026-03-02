@@ -362,12 +362,38 @@
         border-color: #22c55e !important;
       }
 
-      .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+      .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+      .btn-icon {
+        background: transparent;
+        color: #64748b;
+        border: 1px solid #e2e8f0;
+        padding: 0.4rem 0.5rem;
+        border-radius: 5px;
+        transition: all 0.15s;
+      }
+      .btn-icon:hover:not(:disabled) {
+        background: #e2e8f0;
+        color: #1e293b;
+        border-color: #cbd5e1;
+      }
+      .btn-icon:active:not(:disabled) {
+        background: #cbd5e1;
+      }
+
+      .btn-divider {
+        width: 1px;
+        background: #e2e8f0;
+        margin: 0.1rem 0.1rem;
+        align-self: stretch;
+        flex-shrink: 0;
+      }
 
       .button-group {
         display: flex;
         gap: 0.4rem;
         flex-wrap: wrap;
+        align-items: center;
       }
 
       /* ── Tabs ─────────────────────────────────────────── */
@@ -478,6 +504,17 @@
             <div class="panel-hint">Paste or type — HTML is converted automatically</div>
           </div>
           <div class="button-group">
+            <button id="undo-btn" class="btn btn-icon" title="Undo (Ctrl+Z / Cmd+Z)" disabled>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/>
+              </svg>
+            </button>
+            <button id="redo-btn" class="btn btn-icon" title="Redo (Ctrl+Y / Cmd+Shift+Z)" disabled>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/>
+              </svg>
+            </button>
+            <div class="btn-divider"></div>
             <button id="clear-all" class="btn btn-secondary">✕ Clear</button>
           </div>
         </div>

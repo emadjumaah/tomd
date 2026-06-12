@@ -21,6 +21,8 @@ export class WebToMarkdownApp {
   private editor!: HTMLElement;
   private converter!: AdvancedHtmlToMarkdown;
   private mdEditor!: monaco.editor.IStandaloneCodeEditor;
+  private mdInput?: monaco.editor.IStandaloneCodeEditor; // reverse-mode input (lazy)
+  private mode: "forward" | "reverse" = "forward";
   private isUpdatingFromEditor = false;
   private updateTimeout: number | null = null;
 
@@ -35,6 +37,7 @@ export class WebToMarkdownApp {
     this.initializeMonaco();
     this.setupEventListeners();
     this.setupPasteHandling();
+    this.setupModeToggle();
   }
 
   private initializeEditor(): void {
@@ -129,10 +132,10 @@ export class WebToMarkdownApp {
   }
 
   private setupEventListeners(): void {
-    // Tab switching
-    document.querySelectorAll(".tab").forEach((tab) => {
+    // Tab switching (forward view only)
+    document.querySelectorAll("#forward-view .tab").forEach((tab) => {
       tab.addEventListener("click", (e) => {
-        const targetTab = (e.target as HTMLElement).dataset.tab;
+        const targetTab = (e.currentTarget as HTMLElement).dataset.tab;
         if (targetTab) {
           this.switchTab(targetTab);
         }
@@ -169,14 +172,17 @@ export class WebToMarkdownApp {
   }
 
   private switchTab(tabName: string): void {
-    document
+    const view = document.getElementById("forward-view");
+    if (!view) return;
+
+    view
       .querySelectorAll(".tab")
       .forEach((tab) => tab.classList.remove("active"));
-    document
+    view
       .querySelectorAll(".tab-content")
       .forEach((content) => content.classList.remove("active"));
 
-    document.querySelector(`[data-tab="${tabName}"]`)?.classList.add("active");
+    view.querySelector(`[data-tab="${tabName}"]`)?.classList.add("active");
     document.getElementById(`${tabName}-tab`)?.classList.add("active");
 
     if (tabName === "editor") {
@@ -309,23 +315,28 @@ export class WebToMarkdownApp {
 
   private updatePreview(): void {
     try {
-      const markdown = this.mdEditor.getValue();
       const previewElement = document.getElementById("markdown-preview");
-
       if (previewElement) {
-        let html = marked.parse(markdown) as string;
-
-        // XSS hardening: strip javascript:/data: hrefs and inline event handlers
-        html = html
-          .replace(/\shref="(javascript|data):[^"]*"/gi, "")
-          .replace(/\ssrc="(javascript|data):[^"]*"/gi, "")
-          .replace(/\s+on\w+="[^"]*"/gi, "");
-
-        previewElement.innerHTML = html;
+        previewElement.innerHTML = this.renderMarkdownToHtml(
+          this.mdEditor.getValue(),
+        );
       }
     } catch (error) {
       console.error("Error updating preview:", error);
     }
+  }
+
+  /** Render Markdown to sanitized HTML (shared by both previews + export). */
+  private renderMarkdownToHtml(markdown: string): string {
+    let html = marked.parse(markdown) as string;
+
+    // XSS hardening: strip javascript:/data: hrefs and inline event handlers
+    html = html
+      .replace(/\shref="(javascript|data):[^"]*"/gi, "")
+      .replace(/\ssrc="(javascript|data):[^"]*"/gi, "")
+      .replace(/\s+on\w+="[^"]*"/gi, "");
+
+    return html;
   }
 
   private updateStats(): void {
@@ -386,6 +397,228 @@ export class WebToMarkdownApp {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  }
+
+  // ── Reverse mode: Markdown → Web ──────────────────────────
+
+  private setupModeToggle(): void {
+    document
+      .getElementById("mode-forward-btn")
+      ?.addEventListener("click", () => this.switchMode("forward"));
+    document
+      .getElementById("mode-reverse-btn")
+      ?.addEventListener("click", () => this.switchMode("reverse"));
+
+    // Reverse-view tab switching (Preview / HTML)
+    document.querySelectorAll("#reverse-view .tab").forEach((tab) => {
+      tab.addEventListener("click", (e) => {
+        const target = (e.currentTarget as HTMLElement).dataset.revtab;
+        if (target) this.switchRevTab(target);
+      });
+    });
+
+    document
+      .getElementById("rev-clear")
+      ?.addEventListener("click", () => this.clearReverse());
+    document
+      .getElementById("rev-copy-html")
+      ?.addEventListener("click", () => this.copyHtml());
+    document
+      .getElementById("rev-download-html")
+      ?.addEventListener("click", () => this.downloadHtml());
+  }
+
+  private switchMode(mode: "forward" | "reverse"): void {
+    if (this.mode === mode) return;
+    this.mode = mode;
+
+    document.body.classList.toggle("mode-forward", mode === "forward");
+    document.body.classList.toggle("mode-reverse", mode === "reverse");
+    document
+      .getElementById("mode-forward-btn")
+      ?.classList.toggle("active", mode === "forward");
+    document
+      .getElementById("mode-reverse-btn")
+      ?.classList.toggle("active", mode === "reverse");
+
+    const title = document.getElementById("app-title");
+    const subtitle = document.getElementById("app-subtitle");
+    const badge = document.getElementById("header-badge");
+
+    if (mode === "reverse") {
+      if (title) title.textContent = "Markdown to Web";
+      if (subtitle)
+        subtitle.textContent =
+          "Paste Markdown on the left — get the rendered web view on the right";
+      if (badge) badge.textContent = "Live HTML render";
+
+      // Monaco must be created while its container is visible to size correctly.
+      this.ensureMdInput();
+      setTimeout(() => this.mdInput?.layout(), 50);
+    } else {
+      if (title) title.textContent = "Web to Markdown";
+      if (subtitle)
+        subtitle.textContent =
+          "Paste rich content on the left — get clean Markdown on the right";
+      if (badge) badge.textContent = "GFM + Tables + Code";
+
+      setTimeout(() => this.mdEditor.layout(), 50);
+    }
+  }
+
+  /** Lazily create the reverse-mode Markdown input editor on first use. */
+  private ensureMdInput(): void {
+    if (this.mdInput) return;
+
+    const container = document.getElementById("md-input");
+    if (!container) return;
+
+    this.mdInput = monaco.editor.create(container, {
+      value: "",
+      language: "markdown",
+      theme: "vs-dark",
+      minimap: { enabled: false },
+      scrollBeyondLastLine: false,
+      fontSize: 14,
+      lineNumbers: "on",
+      wordWrap: "on",
+      automaticLayout: true,
+      readOnly: false,
+      padding: { top: 10 },
+    });
+
+    this.mdInput.onDidChangeModelContent(() => {
+      this.debounceUpdate(() => this.updateWebView());
+      this.updateRevStats();
+    });
+
+    this.updateWebView();
+    this.updateRevStats();
+  }
+
+  private switchRevTab(tabName: string): void {
+    const view = document.getElementById("reverse-view");
+    if (!view) return;
+
+    view
+      .querySelectorAll(".tab")
+      .forEach((tab) => tab.classList.remove("active"));
+    view
+      .querySelectorAll(".tab-content")
+      .forEach((content) => content.classList.remove("active"));
+
+    view
+      .querySelector(`[data-revtab="${tabName}"]`)
+      ?.classList.add("active");
+    document.getElementById(`rev-${tabName}-tab`)?.classList.add("active");
+  }
+
+  private updateWebView(): void {
+    try {
+      const markdown = this.mdInput?.getValue() ?? "";
+      const hasContent = markdown.trim() !== "";
+      const html = this.renderMarkdownToHtml(markdown);
+
+      const preview = document.getElementById("web-preview");
+      if (preview) {
+        preview.innerHTML = hasContent
+          ? html
+          : '<p style="color:#94a3b8;text-align:center;margin-top:3rem;font-size:0.9rem">Rendered web view will appear here once you paste Markdown…</p>';
+      }
+
+      const output = document.getElementById("html-output");
+      if (output) output.textContent = hasContent ? html : "";
+    } catch (error) {
+      console.error("Error updating web view:", error);
+    }
+  }
+
+  private updateRevStats(): void {
+    const markdown = this.mdInput?.getValue() ?? "";
+    const statsEl = document.getElementById("rev-stats");
+    if (!statsEl) return;
+
+    const chars = markdown.length;
+    const words =
+      markdown.trim() === "" ? 0 : markdown.trim().split(/\s+/).length;
+    const lines = markdown === "" ? 0 : markdown.split("\n").length;
+    statsEl.textContent = `${words} words · ${chars} chars · ${lines} lines`;
+  }
+
+  private async copyHtml(): Promise<void> {
+    const markdown = this.mdInput?.getValue() ?? "";
+    if (!markdown.trim()) return;
+
+    try {
+      await navigator.clipboard.writeText(this.renderMarkdownToHtml(markdown));
+
+      const button = document.getElementById(
+        "rev-copy-html",
+      ) as HTMLButtonElement;
+      const originalText = button.textContent;
+      button.textContent = "✓ Copied!";
+      button.classList.add("success");
+
+      setTimeout(() => {
+        button.textContent = originalText;
+        button.classList.remove("success");
+      }, 2000);
+    } catch (error) {
+      console.error("Failed to copy HTML:", error);
+    }
+  }
+
+  private downloadHtml(): void {
+    const markdown = this.mdInput?.getValue() ?? "";
+    if (!markdown.trim()) return;
+
+    const doc = this.wrapStandaloneHtml(this.renderMarkdownToHtml(markdown));
+    const blob = new Blob([doc], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `converted-${new Date().toISOString().slice(0, 10)}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  /** Wrap rendered HTML in a minimal, self-contained, styled document. */
+  private wrapStandaloneHtml(body: string): string {
+    return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Converted from Markdown</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.7; color: #1e293b; max-width: 800px; margin: 2rem auto; padding: 0 1.25rem; }
+  h1, h2, h3, h4, h5, h6 { line-height: 1.3; margin-top: 1.4rem; }
+  h1 { border-bottom: 2px solid #e2e8f0; padding-bottom: .3rem; }
+  h2 { border-bottom: 1px solid #e2e8f0; padding-bottom: .25rem; }
+  a { color: #6366f1; }
+  code { background: #f1f5f9; padding: .15rem .4rem; border-radius: 3px; font-family: Menlo, Consolas, monospace; }
+  pre { background: #0d1117; color: #e2e8f0; padding: 1rem 1.25rem; border-radius: 6px; overflow-x: auto; }
+  pre code { background: none; padding: 0; color: inherit; }
+  blockquote { border-left: 4px solid #6366f1; padding-left: 1rem; color: #64748b; margin: 1rem 0; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #e2e8f0; padding: .5rem .75rem; text-align: left; }
+  th { background: #f8fafc; }
+  img { max-width: 100%; }
+</style>
+</head>
+<body>
+${body}
+</body>
+</html>`;
+  }
+
+  private clearReverse(): void {
+    this.mdInput?.setValue("");
+    this.updateWebView();
+    this.updateRevStats();
   }
 
   public getMarkdown(): string {

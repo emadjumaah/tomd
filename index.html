@@ -78,9 +78,19 @@
         display: flex;
         flex: 1;
         overflow: hidden;
+      }
+
+      /* ── Mode views (forward / reverse) ──────────────── */
+      .mode-view {
+        display: none;
+        flex: 1;
+        overflow: hidden;
         gap: 1px;
         background: #d8dce6;
+        min-width: 0;
       }
+      body.mode-forward .mode-view[data-mode="forward"] { display: flex; }
+      body.mode-reverse .mode-view[data-mode="reverse"] { display: flex; }
 
       .panel {
         flex: 1;
@@ -214,7 +224,9 @@
         min-height: 0;
       }
 
-      #markdown-preview {
+      /* ── Rendered output (shared by both previews) ────── */
+      #markdown-preview,
+      #web-preview {
         flex: 1;
         padding: 1.25rem 1.5rem;
         overflow-y: auto;
@@ -223,31 +235,31 @@
         color: #1e293b;
       }
 
-      #markdown-preview h1,
-      #markdown-preview h2,
-      #markdown-preview h3,
-      #markdown-preview h4,
-      #markdown-preview h5,
-      #markdown-preview h6 {
+      .rendered h1,
+      .rendered h2,
+      .rendered h3,
+      .rendered h4,
+      .rendered h5,
+      .rendered h6 {
         margin-top: 1.4rem;
         margin-bottom: 0.5rem;
         color: #0f172a;
         line-height: 1.3;
       }
-      #markdown-preview h1 { font-size: 1.75rem; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.3rem; }
-      #markdown-preview h2 { font-size: 1.4rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.25rem; }
-      #markdown-preview h3 { font-size: 1.15rem; }
+      .rendered h1 { font-size: 1.75rem; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.3rem; }
+      .rendered h2 { font-size: 1.4rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.25rem; }
+      .rendered h3 { font-size: 1.15rem; }
 
-      #markdown-preview p { margin-bottom: 0.9rem; }
+      .rendered p { margin-bottom: 0.9rem; }
 
-      #markdown-preview a {
+      .rendered a {
         color: #6366f1;
         text-decoration: underline;
         text-underline-offset: 2px;
       }
-      #markdown-preview a:hover { color: #4f46e5; }
+      .rendered a:hover { color: #4f46e5; }
 
-      #markdown-preview code {
+      .rendered code {
         background: #f1f5f9;
         padding: 0.15rem 0.4rem;
         border-radius: 3px;
@@ -256,7 +268,7 @@
         color: #7c3aed;
       }
 
-      #markdown-preview pre {
+      .rendered pre {
         background: #0d1117;
         border: 1px solid #1e2738;
         border-radius: 6px;
@@ -265,7 +277,7 @@
         margin-bottom: 1rem;
       }
 
-      #markdown-preview pre code {
+      .rendered pre code {
         background: none;
         padding: 0;
         border-radius: 0;
@@ -273,9 +285,8 @@
         font-size: 0.85em;
       }
 
-      #markdown-preview blockquote {
+      .rendered blockquote {
         border-left: 4px solid #6366f1;
-        padding-left: 1rem;
         margin: 1rem 0;
         color: #64748b;
         font-style: italic;
@@ -284,43 +295,94 @@
         border-radius: 0 4px 4px 0;
       }
 
-      #markdown-preview table {
+      .rendered table {
         border-collapse: collapse;
         width: 100%;
         margin-bottom: 1rem;
         font-size: 0.9em;
       }
 
-      #markdown-preview th,
-      #markdown-preview td {
+      .rendered th,
+      .rendered td {
         border: 1px solid #e2e8f0;
         padding: 0.5rem 0.75rem;
         text-align: left;
       }
 
-      #markdown-preview th {
+      .rendered th {
         background: #f8fafc;
         font-weight: 600;
         color: #475569;
       }
 
-      #markdown-preview tr:nth-child(even) td { background: #fafbfc; }
+      .rendered tr:nth-child(even) td { background: #fafbfc; }
 
-      #markdown-preview ul,
-      #markdown-preview ol {
+      .rendered ul,
+      .rendered ol {
         margin-bottom: 0.9rem;
         padding-left: 1.75rem;
       }
 
-      #markdown-preview li { margin-bottom: 0.3rem; }
+      .rendered li { margin-bottom: 0.3rem; }
 
-      #markdown-preview img { max-width: 100%; border-radius: 4px; }
+      .rendered img { max-width: 100%; border-radius: 4px; }
 
-      #markdown-preview hr {
+      .rendered hr {
         border: none;
         border-top: 2px solid #e2e8f0;
         margin: 1.5rem 0;
       }
+
+      /* ── HTML source output (reverse mode) ────────────── */
+      #html-output {
+        flex: 1;
+        margin: 0;
+        overflow: auto;
+        padding: 1rem 1.25rem;
+        background: #0d1117;
+        color: #e2e8f0;
+        font-family: "Monaco", "Menlo", "Consolas", monospace;
+        font-size: 0.82rem;
+        line-height: 1.6;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      #html-output:empty::before {
+        content: "HTML source will appear here once you paste Markdown…";
+        color: #6c7689;
+      }
+
+      /* Markdown input editor (reverse mode) */
+      #md-input {
+        flex: 1;
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+      }
+
+      /* ── Mode toggle (header) ─────────────────────────── */
+      .mode-toggle {
+        display: inline-flex;
+        background: #0f1320;
+        border: 1px solid #2e3650;
+        border-radius: 8px;
+        padding: 2px;
+        gap: 2px;
+      }
+      .mode-btn {
+        background: transparent;
+        border: none;
+        color: #8892a4;
+        font-size: 0.78rem;
+        font-weight: 600;
+        padding: 0.35rem 0.85rem;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.15s;
+        white-space: nowrap;
+      }
+      .mode-btn:hover { color: #e2e8f0; }
+      .mode-btn.active { background: #6366f1; color: white; }
 
       /* ── Buttons ──────────────────────────────────────── */
       .btn {
@@ -474,14 +536,18 @@
       }
     </style>
   </head>
-  <body>
+  <body class="mode-forward">
     <header class="header">
       <div class="header-left">
-        <h1>Web to Markdown</h1>
-        <p>Paste rich content on the left — get clean Markdown on the right</p>
+        <h1 id="app-title">Web to Markdown</h1>
+        <p id="app-subtitle">Paste rich content on the left — get clean Markdown on the right</p>
+      </div>
+      <div class="mode-toggle" role="tablist" aria-label="Conversion direction">
+        <button id="mode-forward-btn" class="mode-btn active" type="button">HTML → MD</button>
+        <button id="mode-reverse-btn" class="mode-btn" type="button">MD → Web</button>
       </div>
       <div style="display:flex;align-items:center;gap:0.6rem;flex-shrink:0">
-        <span class="header-badge">GFM + Tables + Code</span>
+        <span class="header-badge" id="header-badge">GFM + Tables + Code</span>
         <a href="https://github.com/emadjumaah/tomd"
            target="_blank"
            rel="noopener noreferrer"
@@ -496,6 +562,8 @@
     </header>
 
     <main class="main-container">
+      <!-- ══ Forward: HTML → Markdown ══════════════════════ -->
+      <div class="mode-view" data-mode="forward" id="forward-view">
       <!-- Left Panel: WYSIWYG Editor -->
       <div class="panel">
         <div class="panel-header">
@@ -551,11 +619,65 @@
 
           <div class="tab-content" id="preview-tab">
             <div class="preview-container">
-              <div id="markdown-preview">
+              <div id="markdown-preview" class="rendered">
                 <p style="color:#94a3b8;text-align:center;margin-top:3rem;font-size:0.9rem">
                   Preview will appear here once you add content…
                 </p>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div>
+      <!-- ══ Reverse: Markdown → Web ═══════════════════════ -->
+      <div class="mode-view" data-mode="reverse" id="reverse-view">
+        <!-- Left Panel: Markdown Input -->
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <div class="panel-title">Markdown Input</div>
+              <div class="panel-hint">Paste or type Markdown — rendered live on the right</div>
+            </div>
+            <div class="button-group">
+              <button id="rev-clear" class="btn btn-secondary">✕ Clear</button>
+            </div>
+          </div>
+          <div class="panel-content">
+            <div id="md-input"></div>
+          </div>
+        </div>
+
+        <!-- Right Panel: Web View (Preview + HTML source) -->
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <div class="panel-title">Web View</div>
+              <div class="panel-hint">Rendered preview — switch to HTML for the source</div>
+            </div>
+            <div class="button-group">
+              <button id="rev-copy-html" class="btn btn-primary">📋 Copy HTML</button>
+              <button id="rev-download-html" class="btn btn-outline">↓ Download .html</button>
+            </div>
+          </div>
+          <div class="panel-content">
+            <div class="tabs">
+              <button class="tab active" data-revtab="preview">Preview</button>
+              <button class="tab" data-revtab="html">HTML</button>
+            </div>
+
+            <div class="tab-content active" id="rev-preview-tab">
+              <div class="preview-container">
+                <div id="web-preview" class="rendered">
+                  <p style="color:#94a3b8;text-align:center;margin-top:3rem;font-size:0.9rem">
+                    Rendered web view will appear here once you paste Markdown…
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div class="tab-content" id="rev-html-tab">
+              <pre id="html-output"></pre>
+              <div id="rev-stats" class="stats-bar">0 words · 0 chars · 0 lines</div>
             </div>
           </div>
         </div>

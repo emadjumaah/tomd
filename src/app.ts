@@ -38,6 +38,7 @@ export class WebToMarkdownApp {
     this.setupEventListeners();
     this.setupPasteHandling();
     this.setupModeToggle();
+    this.setupSplitters();
   }
 
   private initializeEditor(): void {
@@ -397,6 +398,63 @@ export class WebToMarkdownApp {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  }
+
+  // ── Resizable split between the two panels ────────────────
+
+  private setupSplitters(): void {
+    const MIN_PANEL = 240; // px — minimum width for either side
+
+    document
+      .querySelectorAll<HTMLElement>(".splitter")
+      .forEach((splitter) => {
+        const container = splitter.parentElement;
+        const leftPanel = splitter.previousElementSibling as HTMLElement | null;
+        if (!container || !leftPanel) return;
+
+        let dragging = false;
+
+        const onMove = (e: PointerEvent) => {
+          if (!dragging) return;
+          const rect = container.getBoundingClientRect();
+          const max = rect.width - MIN_PANEL;
+          let leftWidth = e.clientX - rect.left;
+          leftWidth = Math.max(MIN_PANEL, Math.min(leftWidth, max));
+          // Store as a percentage so the split stays proportional on window resize.
+          leftPanel.style.flex = `0 0 ${(leftWidth / rect.width) * 100}%`;
+        };
+
+        const onUp = () => {
+          if (!dragging) return;
+          dragging = false;
+          splitter.classList.remove("dragging");
+          document.body.classList.remove("resizing");
+          window.removeEventListener("pointermove", onMove);
+          window.removeEventListener("pointerup", onUp);
+          this.relayoutEditors();
+        };
+
+        splitter.addEventListener("pointerdown", (e: PointerEvent) => {
+          dragging = true;
+          splitter.classList.add("dragging");
+          document.body.classList.add("resizing");
+          window.addEventListener("pointermove", onMove);
+          window.addEventListener("pointerup", onUp);
+          e.preventDefault();
+        });
+
+        // Double-click resets to the default 50/50 split.
+        splitter.addEventListener("dblclick", () => {
+          leftPanel.style.flex = "";
+          this.relayoutEditors();
+        });
+      });
+  }
+
+  /** Re-layout Monaco editors after the panel widths change. */
+  private relayoutEditors(): void {
+    this.mdEditor.layout();
+    this.mdInput?.layout();
   }
 
   // ── Reverse mode: Markdown → Web ──────────────────────────

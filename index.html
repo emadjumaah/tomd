@@ -334,7 +334,7 @@
       .rendered td {
         border: 1px solid #e2e8f0;
         padding: 0.5rem 0.75rem;
-        text-align: left;
+        text-align: start;
       }
 
       .rendered th {
@@ -359,6 +359,30 @@
         border: none;
         border-top: 2px solid #e2e8f0;
         margin: 1.5rem 0;
+      }
+
+      /* ── Bidirectional text (Arabic / Hebrew ↔ English) ──
+         WhatsApp-style: each paragraph picks its own direction from
+         its first strong character, so mixed RTL/LTR text (and numbers,
+         Latin identifiers) stays in the correct visual order.
+         `unicode-bidi: plaintext` does exactly this, per block. */
+      #editor,
+      #editor p,
+      #editor div,
+      #editor li,
+      #editor h1, #editor h2, #editor h3,
+      #editor h4, #editor h5, #editor h6,
+      #editor blockquote,
+      #editor td, #editor th,
+      .rendered,
+      .rendered p,
+      .rendered li,
+      .rendered h1, .rendered h2, .rendered h3,
+      .rendered h4, .rendered h5, .rendered h6,
+      .rendered blockquote,
+      .rendered td, .rendered th {
+        unicode-bidi: plaintext;
+        text-align: start;
       }
 
       /* ── HTML source output (reverse mode) ────────────── */

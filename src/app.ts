@@ -1,4 +1,5 @@
 import { AdvancedHtmlToMarkdown } from "./converter";
+import { ConversionStore } from "./storage";
 import { marked } from "marked";
 import * as monaco from "monaco-editor";
 
@@ -31,6 +32,12 @@ export class WebToMarkdownApp {
   private historyIndex = 0;
   private readonly MAX_HISTORY = 50;
 
+  // Local persistence (last session + conversion history)
+  private store = new ConversionStore();
+  private saveTimeout: number | null = null;
+  /** Reverse-mode Markdown restored before its editor exists yet. */
+  private pendingReverseMd = "";
+
   constructor() {
     this.initializeEditor();
     this.initializeConverter();
@@ -39,6 +46,8 @@ export class WebToMarkdownApp {
     this.setupPasteHandling();
     this.setupModeToggle();
     this.setupSplitters();
+    this.setupHistoryUI();
+    this.restoreLastSession();
   }
 
   private initializeEditor(): void {
@@ -54,6 +63,7 @@ export class WebToMarkdownApp {
         this.updateMarkdown();
         this.saveSnapshot();
       });
+      this.scheduleSave();
     });
 
     this.editor.addEventListener("keydown", (e: KeyboardEvent) => {
@@ -221,8 +231,13 @@ export class WebToMarkdownApp {
           this.editor.innerHTML = processedHtml;
         }
 
-        // Trigger conversion after DOM settles
-        setTimeout(() => { this.updateMarkdown(); this.saveSnapshot(); }, 50);
+        // Trigger conversion after DOM settles, then archive this conversion.
+        setTimeout(() => {
+          this.updateMarkdown();
+          this.saveSnapshot();
+          this.archiveForward();
+          this.scheduleSave();
+        }, 50);
         return;
       }
 
@@ -236,7 +251,12 @@ export class WebToMarkdownApp {
         } else {
           this.editor.innerText = textData;
         }
-        setTimeout(() => { this.updateMarkdown(); this.saveSnapshot(); }, 50);
+        setTimeout(() => {
+          this.updateMarkdown();
+          this.saveSnapshot();
+          this.archiveForward();
+          this.scheduleSave();
+        }, 50);
       }
     });
   }
@@ -373,6 +393,7 @@ export class WebToMarkdownApp {
   }
 
   private clearAll(): void {
+    this.archiveForward(); // keep what's being cleared in history
     this.editor.innerHTML = "";
     this.mdEditor.setValue("");
     const preview = document.getElementById("markdown-preview");
@@ -382,6 +403,7 @@ export class WebToMarkdownApp {
     }
     this.updateStats();
     this.saveSnapshot();
+    this.scheduleSave();
   }
 
   private downloadMarkdown(): void {
@@ -522,6 +544,8 @@ export class WebToMarkdownApp {
 
       setTimeout(() => this.mdEditor.layout(), 50);
     }
+
+    this.scheduleSave();
   }
 
   /** Lazily create the reverse-mode Markdown input editor on first use. */
@@ -532,7 +556,7 @@ export class WebToMarkdownApp {
     if (!container) return;
 
     this.mdInput = monaco.editor.create(container, {
-      value: "",
+      value: this.pendingReverseMd || "",
       language: "markdown",
       theme: "vs-dark",
       minimap: { enabled: false },
@@ -548,6 +572,12 @@ export class WebToMarkdownApp {
     this.mdInput.onDidChangeModelContent(() => {
       this.debounceUpdate(() => this.updateWebView());
       this.updateRevStats();
+      this.scheduleSave();
+    });
+
+    // Archive on paste (a distinct "conversion"), after the model settles.
+    this.mdInput.onDidPaste(() => {
+      setTimeout(() => this.archiveReverse(), 0);
     });
 
     this.updateWebView();
@@ -674,9 +704,238 @@ ${body}
   }
 
   private clearReverse(): void {
+    this.archiveReverse(); // keep what's being cleared in history
+    this.pendingReverseMd = "";
     this.mdInput?.setValue("");
     this.updateWebView();
     this.updateRevStats();
+    this.scheduleSave();
+  }
+
+  // ── Persistence: last session + conversion history ────────
+
+  private newId(): string {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  }
+
+  private scheduleSave(): void {
+    if (this.saveTimeout) clearTimeout(this.saveTimeout);
+    this.saveTimeout = window.setTimeout(() => this.saveWorkingState(), 600);
+  }
+
+  private saveWorkingState(): void {
+    this.store.saveLast({
+      mode: this.mode,
+      forwardHtml: this.editor.innerHTML,
+      reverseMd: this.mdInput ? this.mdInput.getValue() : this.pendingReverseMd,
+    });
+  }
+
+  private restoreLastSession(): void {
+    const last = this.store.loadLast();
+    this.refreshHistoryCount();
+    if (!last) return;
+
+    if (last.reverseMd) this.pendingReverseMd = last.reverseMd;
+
+    if (last.forwardHtml) {
+      this.editor.innerHTML = last.forwardHtml;
+      // Populate the Markdown pane now, even if reverse mode is the one shown.
+      this.updateMarkdown();
+      this.saveSnapshot();
+    }
+
+    if (last.mode === "reverse") {
+      this.switchMode("reverse"); // creates mdInput seeded with pendingReverseMd
+    }
+  }
+
+  /** Plain-text snippet for the history list (RTL-safe, single line). */
+  private makePreview(text: string): string {
+    return text.replace(/\s+/g, " ").trim().slice(0, 140);
+  }
+
+  private archiveForward(): void {
+    const html = this.editor.innerHTML;
+    const text = (this.editor.textContent || "").trim();
+    if (!html.trim() || !text) return;
+    this.store.addHistory({
+      id: this.newId(),
+      mode: "forward",
+      source: html,
+      preview: this.makePreview(text),
+      ts: Date.now(),
+    });
+    this.refreshHistoryUI();
+  }
+
+  private archiveReverse(): void {
+    const md = this.mdInput?.getValue() ?? "";
+    if (!md.trim()) return;
+    // Strip the most common Markdown punctuation for a cleaner preview.
+    const text = md.replace(/[#>*`_~]|^[-+]\s/gm, " ");
+    this.store.addHistory({
+      id: this.newId(),
+      mode: "reverse",
+      source: md,
+      preview: this.makePreview(text),
+      ts: Date.now(),
+    });
+    this.refreshHistoryUI();
+  }
+
+  // ── History overlay UI ────────────────────────────────────
+
+  private setupHistoryUI(): void {
+    document
+      .getElementById("history-btn")
+      ?.addEventListener("click", () => this.openHistory());
+    document
+      .getElementById("history-close")
+      ?.addEventListener("click", () => this.closeHistory());
+    document.getElementById("history-clear")?.addEventListener("click", () => {
+      this.store.clearHistory();
+      this.renderHistory();
+      this.refreshHistoryCount();
+    });
+
+    document
+      .querySelectorAll("#history-overlay [data-close]")
+      .forEach((el) => el.addEventListener("click", () => this.closeHistory()));
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") this.closeHistory();
+    });
+
+    // Event delegation: click a row to restore, the trash icon to delete.
+    document.getElementById("history-list")?.addEventListener("click", (e) => {
+      const target = e.target as HTMLElement;
+      const del = target.closest(".history-delete") as HTMLElement | null;
+      if (del?.dataset.id) {
+        this.store.deleteHistory(del.dataset.id);
+        this.renderHistory();
+        this.refreshHistoryCount();
+        return;
+      }
+      const row = target.closest(".history-row") as HTMLElement | null;
+      if (row?.dataset.id) this.restoreEntry(row.dataset.id);
+    });
+  }
+
+  private openHistory(): void {
+    this.renderHistory();
+    const overlay = document.getElementById("history-overlay");
+    if (overlay) overlay.hidden = false;
+  }
+
+  private closeHistory(): void {
+    const overlay = document.getElementById("history-overlay");
+    if (overlay) overlay.hidden = true;
+  }
+
+  private refreshHistoryCount(): void {
+    const n = this.store.loadHistory().length;
+    const btnCount = document.getElementById("history-count");
+    const panelCount = document.getElementById("history-count-panel");
+    if (btnCount) {
+      btnCount.textContent = String(n);
+      btnCount.hidden = n === 0;
+    }
+    if (panelCount) panelCount.textContent = String(n);
+  }
+
+  private refreshHistoryUI(): void {
+    this.refreshHistoryCount();
+    const overlay = document.getElementById("history-overlay");
+    if (overlay && !overlay.hidden) this.renderHistory();
+  }
+
+  private relativeTime(ts: number): string {
+    const s = Math.floor((Date.now() - ts) / 1000);
+    if (s < 45) return "just now";
+    const m = Math.floor(s / 60);
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+    const d = Math.floor(h / 24);
+    if (d < 7) return `${d}d ago`;
+    return new Date(ts).toLocaleDateString();
+  }
+
+  private renderHistory(): void {
+    const listEl = document.getElementById("history-list");
+    const emptyEl = document.getElementById("history-empty");
+    if (!listEl || !emptyEl) return;
+
+    const items = this.store.loadHistory();
+    listEl.innerHTML = "";
+    emptyEl.hidden = items.length > 0;
+
+    for (const entry of items) {
+      const row = document.createElement("div");
+      row.className = "history-row";
+      row.dataset.id = entry.id;
+      row.title = "Click to restore";
+
+      const badge = document.createElement("span");
+      badge.className =
+        "history-badge " +
+        (entry.mode === "forward" ? "badge-forward" : "badge-reverse");
+      badge.textContent = entry.mode === "forward" ? "HTML → MD" : "MD → Web";
+
+      const main = document.createElement("div");
+      main.className = "history-row-main";
+
+      const preview = document.createElement("div");
+      preview.className = "history-preview";
+      preview.textContent = entry.preview || "(empty)";
+
+      const meta = document.createElement("div");
+      meta.className = "history-meta";
+      meta.textContent = `${this.relativeTime(entry.ts)} · ${entry.source.length.toLocaleString()} chars`;
+
+      main.appendChild(preview);
+      main.appendChild(meta);
+
+      const actions = document.createElement("div");
+      actions.className = "history-row-actions";
+      const del = document.createElement("button");
+      del.className = "btn btn-icon history-delete";
+      del.dataset.id = entry.id;
+      del.title = "Delete";
+      del.setAttribute("aria-label", "Delete");
+      del.textContent = "🗑";
+      actions.appendChild(del);
+
+      row.appendChild(badge);
+      row.appendChild(main);
+      row.appendChild(actions);
+      listEl.appendChild(row);
+    }
+  }
+
+  private restoreEntry(id: string): void {
+    const entry = this.store.getById(id);
+    if (!entry) return;
+
+    if (entry.mode === "forward") {
+      if (this.mode !== "forward") this.switchMode("forward");
+      this.editor.innerHTML = entry.source;
+      this.updateMarkdown();
+      this.saveSnapshot();
+    } else {
+      this.pendingReverseMd = entry.source;
+      if (this.mode !== "reverse") this.switchMode("reverse");
+      this.ensureMdInput();
+      if (this.mdInput && this.mdInput.getValue() !== entry.source) {
+        this.mdInput.setValue(entry.source);
+      }
+      this.updateWebView();
+      this.updateRevStats();
+    }
+
+    this.closeHistory();
+    this.saveWorkingState();
   }
 
   public getMarkdown(): string {
